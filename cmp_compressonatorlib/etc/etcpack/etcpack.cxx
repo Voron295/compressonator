@@ -4421,6 +4421,7 @@ void compressBlockPlanar57(uint8 *img, int width,int height,int startx,int start
 
     free(D_matrix->data); free(D_matrix);
     free(x_vector->data); free(x_vector);
+    free(b_vector.data);
 
     // Quantize to 6 bits
     double D = 255*(1.0/((1<<6)-1.0) );
