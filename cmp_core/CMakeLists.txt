@@ -65,43 +65,64 @@ endif()
 set_target_properties(CMP_Core PROPERTIES FOLDER ${PROJECT_FOLDER_SDK_LIBS})
 
 # Core SIMD options
-
-# SSE
-add_library(CMP_Core_SSE STATIC)
-target_sources(CMP_Core_SSE PRIVATE source/core_simd_sse.cpp)
-target_include_directories(CMP_Core_SSE PRIVATE source shaders)
-
-if (UNIX)
-    target_compile_options(CMP_Core_SSE PRIVATE -march=nehalem)
-endif()
-
-set_target_properties(CMP_Core_SSE PROPERTIES FOLDER ${PROJECT_FOLDER_SDK_LIBS})
-
-# AVX
-add_library(CMP_Core_AVX STATIC)
-target_sources(CMP_Core_AVX PRIVATE source/core_simd_avx.cpp)
-target_include_directories(CMP_Core_AVX PRIVATE source shaders)
-
-if (WIN32)
-    target_compile_options(CMP_Core_AVX PRIVATE /arch:AVX2)
+#
+# These libraries hold x86 SSE/AVX/AVX-512 intrinsic code paths and are built
+# with x86-only -march flags. They are only meaningful on x86 CPUs. On other
+# architectures (e.g. Apple Silicon arm64) the intrinsics do not compile and the
+# x86 -march values are rejected by the compiler. CMP_Core is built with the
+# ASPM_GPU define on UNIX, which selects the scalar BC encode path and never
+# references the SIMD symbols, so on non-x86 we simply skip these libraries.
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i.86|x86)$")
+    set(CMP_CORE_BUILD_SIMD ON)
 else()
-    target_compile_options(CMP_Core_AVX PRIVATE -march=haswell)
+    set(CMP_CORE_BUILD_SIMD OFF)
 endif()
 
-set_target_properties(CMP_Core_AVX PROPERTIES FOLDER ${PROJECT_FOLDER_SDK_LIBS})
-
-# AVX-512
-add_library(CMP_Core_AVX512 STATIC)
-target_sources(CMP_Core_AVX512 PRIVATE source/core_simd_avx512.cpp)
-target_include_directories(CMP_Core_AVX512 PRIVATE source shaders)
-
-if (WIN32)
-    target_compile_options(CMP_Core_AVX512 PRIVATE /arch:AVX-512)
-else()
-    target_compile_options(CMP_Core_AVX512 PRIVATE -march=knl)
+if (NOT CMP_CORE_BUILD_SIMD)
+    # CMP_Compressonator (codec_dxtc_rgba.cpp) is compiled without ASPM_GPU and
+    # references the sse_/avx_/avx512_ BC1 symbols via bc1ToggleSIMD(). Provide a
+    # scalar implementation of all three so the link succeeds on non-x86 targets.
+    target_sources(CMP_Core PRIVATE source/core_simd_scalar.cpp)
 endif()
 
-set_target_properties(CMP_Core_AVX512 PROPERTIES FOLDER ${PROJECT_FOLDER_SDK_LIBS})
+if (CMP_CORE_BUILD_SIMD)
+    # SSE
+    add_library(CMP_Core_SSE STATIC)
+    target_sources(CMP_Core_SSE PRIVATE source/core_simd_sse.cpp)
+    target_include_directories(CMP_Core_SSE PRIVATE source shaders)
 
-# Link SIMD libraries to CMP_Core
-target_link_libraries(CMP_Core PRIVATE CMP_Core_SSE CMP_Core_AVX CMP_Core_AVX512)
+    if (UNIX)
+        target_compile_options(CMP_Core_SSE PRIVATE -march=nehalem)
+    endif()
+
+    set_target_properties(CMP_Core_SSE PROPERTIES FOLDER ${PROJECT_FOLDER_SDK_LIBS})
+
+    # AVX
+    add_library(CMP_Core_AVX STATIC)
+    target_sources(CMP_Core_AVX PRIVATE source/core_simd_avx.cpp)
+    target_include_directories(CMP_Core_AVX PRIVATE source shaders)
+
+    if (WIN32)
+        target_compile_options(CMP_Core_AVX PRIVATE /arch:AVX2)
+    else()
+        target_compile_options(CMP_Core_AVX PRIVATE -march=haswell)
+    endif()
+
+    set_target_properties(CMP_Core_AVX PROPERTIES FOLDER ${PROJECT_FOLDER_SDK_LIBS})
+
+    # AVX-512
+    add_library(CMP_Core_AVX512 STATIC)
+    target_sources(CMP_Core_AVX512 PRIVATE source/core_simd_avx512.cpp)
+    target_include_directories(CMP_Core_AVX512 PRIVATE source shaders)
+
+    if (WIN32)
+        target_compile_options(CMP_Core_AVX512 PRIVATE /arch:AVX-512)
+    else()
+        target_compile_options(CMP_Core_AVX512 PRIVATE -march=knl)
+    endif()
+
+    set_target_properties(CMP_Core_AVX512 PROPERTIES FOLDER ${PROJECT_FOLDER_SDK_LIBS})
+
+    # Link SIMD libraries to CMP_Core
+    target_link_libraries(CMP_Core PRIVATE CMP_Core_SSE CMP_Core_AVX CMP_Core_AVX512)
+endif()
